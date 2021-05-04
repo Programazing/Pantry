@@ -11,34 +11,35 @@ namespace Pantry.Controllers
     [ApiController]
     public class PantryController : Controller
     {
-        private readonly AppDbContext _context;
-        private bool ShowImageLocation { get; }
+        private readonly AppDbContext Context;
+        public ISplitClient Client { get; }
+        private bool ShowImageLocation
+        {
+            get { return GetStateOfImageLocation(); }
+        }
+
 
         public PantryController(AppDbContext context, ISplitFactory split)
         {
-            _context = context;
+            Context = context;
+
             var client = split.Client();
             client.BlockUntilReady(10000);
 
-            var treatment = client.GetTreatment("Default_Value", "Pantry_API_ImageLocation");
-
-            if(treatment == "on")
-            {
-                ShowImageLocation = true;
-            }
+            Client = client;
         }
 
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Product>>> GetProducts() => await _context.Products.ToListAsync();
+        public async Task<ActionResult<IEnumerable<Product>>> GetProducts() => await Context.Products.ToListAsync();
 
         [HttpGet("{id}")]
-        public async Task<ActionResult<Product>> GetProduct(int id) => await _context.Products.FindAsync(id) ?? (ActionResult<Product>)NotFound();
+        public async Task<ActionResult<Product>> GetProduct(int id) => await Context.Products.FindAsync(id) ?? (ActionResult<Product>)NotFound();
 
         [HttpPost]
         public async Task<ActionResult<int>> PostProduct(Product product)
         {
-            var entityProduct = await _context.Products.AddAsync(product);
-            await _context.SaveChangesAsync();
+            var entityProduct = await Context.Products.AddAsync(product);
+            await Context.SaveChangesAsync();
 
             return entityProduct.Entity.Id;
         }
@@ -46,14 +47,14 @@ namespace Pantry.Controllers
         [HttpDelete("{id}")]
         public async Task<ActionResult> DeleteProduct(int id)
         {
-            var product = await _context.Products.FindAsync(id);
+            var product = await Context.Products.FindAsync(id);
             if (product == null)
             {
                 return NotFound();
             }
 
-            _context.Products.Remove(product);
-            await _context.SaveChangesAsync();
+            Context.Products.Remove(product);
+            await Context.SaveChangesAsync();
 
             return Ok();
         }
@@ -66,21 +67,51 @@ namespace Pantry.Controllers
                 return NotFound();
             }
 
-            var output = await _context.ImageLocations.FindAsync(id);
+            var output = await Context.ImageLocations.FindAsync(id);
 
             return output;
         }
 
         [HttpGet("/api/[controller]/image/{id}")]
-        public async Task<ActionResult<ImageLocation>> GetProductImage(int id) => await _context.ImageLocations.FindAsync(id) ?? (ActionResult<ImageLocation>)NotFound();
+        public async Task<ActionResult<ImageLocation>> GetProductImage(int id)
+        {
+            if (ShowImageLocation is false)
+            {
+                return NotFound();
+            }
+
+            return await Context.ImageLocations.FindAsync(id);
+        }
 
         [HttpPost("/api/[controller]/image")]
         public async Task<ActionResult<int>> PostProductImage(ImageLocation imageLocation)
         {
-            var entityProduct = await _context.ImageLocations.AddAsync(imageLocation);
-            await _context.SaveChangesAsync();
+            if (ShowImageLocation is false)
+            {
+                return NotFound();
+            }
+
+            var entityProduct = await Context.ImageLocations.AddAsync(imageLocation);
+            await Context.SaveChangesAsync();
 
             return entityProduct.Entity.Id;
+        }
+
+        private bool GetStateOfImageLocation()
+        {
+            var treatment = Client.GetTreatment("Default_Value", "Pantry_API_ImageLocation");
+
+            if (treatment == "on")
+            {
+                return true;
+            }
+
+            if(treatment == "off")
+            {
+                return false;
+            }
+
+            throw new System.Exception("Something went wrong!");
         }
     }
 }
