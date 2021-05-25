@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Pantry.Models;
 using Splitio.Services.Client.Interfaces;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace Pantry.Controllers
@@ -62,39 +63,54 @@ namespace Pantry.Controllers
         [HttpGet("/api/[controller]/image")]
         public async Task<ActionResult<ImageLocation>> GetProductImages(int id)
         {
-            if (ShowImageLocation is false)
+            if (CurrentUserIsAuthorized())
             {
-                return NotFound();
+                if (ShowImageLocation is false)
+                {
+                    return NotFound();
+                }
+
+                var output = await Context.ImageLocations.FindAsync(id);
+
+                return output; 
             }
 
-            var output = await Context.ImageLocations.FindAsync(id);
-
-            return output;
+            return Unauthorized();
         }
 
         [HttpGet("/api/[controller]/image/{id}")]
         public async Task<ActionResult<ImageLocation>> GetProductImage(int id)
         {
-            if (ShowImageLocation is false)
+            if (CurrentUserIsAuthorized())
             {
-                return NotFound();
+                if (ShowImageLocation is false)
+                {
+                    return NotFound();
+                }
+
+                return await Context.ImageLocations.FindAsync(id); 
             }
 
-            return await Context.ImageLocations.FindAsync(id);
+            return Unauthorized();
         }
 
         [HttpPost("/api/[controller]/image")]
         public async Task<ActionResult<int>> PostProductImage(ImageLocation imageLocation)
         {
-            if (ShowImageLocation is false)
+            if (CurrentUserIsAuthorized())
             {
-                return NotFound();
+                if (ShowImageLocation is false)
+                {
+                    return NotFound();
+                }
+
+                var entityProduct = await Context.ImageLocations.AddAsync(imageLocation);
+                await Context.SaveChangesAsync();
+
+                return entityProduct.Entity.Id; 
             }
 
-            var entityProduct = await Context.ImageLocations.AddAsync(imageLocation);
-            await Context.SaveChangesAsync();
-
-            return entityProduct.Entity.Id;
+            return Unauthorized();
         }
 
         private bool GetStateOfImageLocation()
@@ -112,6 +128,22 @@ namespace Pantry.Controllers
             }
 
             throw new System.Exception("Something went wrong!");
+        }
+
+        private bool CurrentUserIsAuthorized()
+        {
+            var currentUser = Context.CurrentUser.FirstOrDefault();
+            if (currentUser != null)
+            {
+                var treatment = Client.GetTreatment(currentUser.Username, "Pantry_API_Entitlements");
+
+                if (treatment == "on")
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
     }
 }
